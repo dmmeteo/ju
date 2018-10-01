@@ -1,0 +1,19 @@
+[aliases]
+ci = commit
+s = status
+
+[jira]
+username = username
+password = password
+server = https://jira.server.com
+
+[repository:frontend]
+default_branch = dev
+path = /home/me/workspace/repository_name
+recepies = ['npm', 'vue']
+http_basic = https://username:password@hg.server.com/repository_name
+
+[repository:backend]
+path = /home/me/workspace/repository_name
+recepies = ['django']
+http_basic = https://username:password@hg.server.com/repository_name
