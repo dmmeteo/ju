@@ -23,5 +23,5 @@ setup(
         'colorama'
     ],
     python_requires=">=3.5",
-    entry_points={"console_scripts": ["ju=ju:cli"]}
+    entry_points={"console_scripts": ["ju=ju.cli:cli"]}
 )

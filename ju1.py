@@ -134,8 +134,9 @@ def config(cfg, edit):
             if not edit:
                 return click.echo_via_pager(text)
             new_text = click.edit(text)
-            with open(cfg.config_path, 'w') as wf:
-                wf.write(new_text)
+            if new_text:
+                with open(cfg.config_path, 'w') as wf:
+                    wf.write(new_text)
 
 
 @cli.command()
