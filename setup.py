@@ -1,5 +1,6 @@
 import os
 from shutil import copyfile
+
 from setuptools import setup
 
 src = os.path.join(os.path.dirname(__file__), 'jurc-example')
@@ -23,5 +24,5 @@ setup(
         'colorama'
     ],
     python_requires=">=3.5",
-    entry_points={"console_scripts": ["ju=ju.cli:cli"]}
+    entry_points={"console_scripts": ["ju=ju:cli"]}
 )

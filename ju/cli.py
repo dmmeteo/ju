@@ -1,7 +1,7 @@
 import os
 import sys
-import click
 
+import click
 
 CONTEXT_SETTINGS = dict(auto_envvar_prefix='COMPLEX')
 
@@ -48,9 +48,10 @@ class ComplexCLI(click.MultiCommand):
             if sys.version_info[0] == 2:
                 name = name.encode('ascii', 'replace')
             mod = __import__(
-                'complex.commands.cmd_%s'%name, None, None, ['cli']
+                'ju.commands.cmd_%s'%name, None, None, ['cli']
             )
-        except ImportError:
+        except ImportError as e:
+            print(e)
             return
         return mod.cli
 
@@ -73,4 +74,3 @@ def cli(ctx, verbose, home):
     ctx.verbose = verbose
     if home is not None:
         ctx.home = home
-

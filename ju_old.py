@@ -7,6 +7,15 @@ import configparser
 from functools import partial
 
 
+# https://python-future.org/unicode_literals.html
+# >>> from __future__ import unicode_literals
+# >>> ...
+# >>> from future.utils import bytes_to_native_str as n
+
+# >>> s = n(b'ABCD')
+# >>> s
+# 'ABCD'  # on both Py2 and Py3
+
 # types
 d = lambda s: s.decode('utf8')
 out = partial(click.secho, bold=True, err=True)
