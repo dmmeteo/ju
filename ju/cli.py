@@ -2,8 +2,9 @@ import os
 import sys
 
 import click
+import configparser
 
-CONTEXT_SETTINGS = dict(auto_envvar_prefix='COMPLEX')
+CONTEXT_SETTINGS = dict(auto_envvar_prefix='JU')
 
 
 class Context(object):
@@ -11,6 +12,11 @@ class Context(object):
     def __init__(self):
         self.verbose = False
         self.home = os.getcwd()
+        self.config_path = os.path.expanduser('~/.jurc')
+        self.aliases = {}
+        self.jira_cfg = {}
+        self.repositores = []
+        self.read_config(self.config_path)
 
     def log(self, msg, *args):
         """Logs a message to stderr."""
@@ -22,6 +28,19 @@ class Context(object):
         """Logs a message to stderr only if verbose is enabled."""
         if self.verbose:
             self.log(msg, *args)
+
+    def read_config(self, filename):
+        """Init settings from config file"""
+        parser = configparser.ConfigParser()
+        parser.read([filename])
+        try:
+            # self.jira_cfg.update(parser.items('jira'))
+            self.aliases.update(parser.items('aliases'))
+            for k, v in parser.items():
+                if k.startswith('repository:'):
+                    self.repositores.append(v)
+        except configparser.NoSectionError:
+            pass
 
 
 pass_context = click.make_pass_decorator(Context, ensure=True)
@@ -37,7 +56,6 @@ class ComplexCLI(click.MultiCommand):
     def list_commands(self, ctx):
         rv = []
         for filename in os.listdir(cmd_folder):
-            print(filename)
             if filename.endswith('.py') and filename.startswith('cmd_'):
                 rv.append(filename[4:-3])
         rv.sort()

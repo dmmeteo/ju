@@ -21,6 +21,7 @@ d = lambda s: s.decode('utf8')
 out = partial(click.secho, bold=True, err=True)
 err = partial(click.secho, fg="red", err=False)
 
+
 def hg_init(repo):
     try:
         hg = hglib.open(repo['path'])
@@ -31,6 +32,7 @@ def hg_init(repo):
         err('\n======> {} <======'.format(repo.name))
         click.echo(e)
         exit()
+
 
 def status_colorize(files_list):
     change_color = {
@@ -48,8 +50,7 @@ def status_colorize(files_list):
         out(click.style(
             '\t{} {}'.format( d(change), d(name) ),
             fg=change_color[d(change)]),
-            bold=False
-        )
+            bold=False)
 
 
 class Config(object):
