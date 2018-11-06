@@ -1,20 +1,12 @@
+# from __future__ import unicode_literals
+
 import os
+from functools import partial, update_wrapper
+
 import click
+import configparser
 import hglib
 from jira import JIRA, JIRAError
-from subprocess import call
-import configparser
-from functools import partial
-
-
-# https://python-future.org/unicode_literals.html
-# >>> from __future__ import unicode_literals
-# >>> ...
-# >>> from future.utils import bytes_to_native_str as n
-
-# >>> s = n(b'ABCD')
-# >>> s
-# 'ABCD'  # on both Py2 and Py3
 
 # types
 d = lambda s: s.decode('utf8')
@@ -22,11 +14,20 @@ out = partial(click.secho, bold=True, err=True)
 err = partial(click.secho, fg="red", err=False)
 
 
-def hg_init(repo):
+def hg_init(repo, branch=None, quiet=False):
+    def drop(*args, **kwargs):
+        pass
+    if quiet:
+        out = err = drop
     try:
         hg = hglib.open(repo['path'])
-        branch = d(hg.branch())
-        out('\n======> {}({}) <======'.format( repo.name, branch ), fg='green')
+        if not branch:
+            branch = d(hg.branch())
+        out('\n======> {}({}) <======'.format(repo.name, branch), fg='green')
+        if hg.incoming():
+            prefix = d(hg.paths()[b'default'])
+            out('comparing with {}'.format(prefix))
+            hg.pull()
         return hg
     except Exception as e:
         err('\n======> {} <======'.format(repo.name))
@@ -47,10 +48,14 @@ def status_colorize(files_list):
     out('Changes not staged for commit:')
     for file in files_list:
         change, name = file
-        out(click.style(
-            '\t{} {}'.format( d(change), d(name) ),
-            fg=change_color[d(change)]),
-            bold=False)
+        change, name = d(change), d(name)
+        out(
+            click.style(
+                '\t{} {}'.format(change, name),
+                fg=change_color[change]
+            ),
+            bold=False
+        )
 
 
 class Config(object):
@@ -93,6 +98,20 @@ class Config(object):
 pass_config = click.make_pass_decorator(Config, ensure=True)
 
 
+# TODO fin refactor to pass_object
+def pass_obj(f):
+    @pass_config
+    @click.pass_context
+    def new_func(ctx, cfg, *args, **kwargs):
+        for repo in cfg.repositores:
+            try:
+                ctx.invoke(f, ctx, cfg, repo, *args, **kwargs)
+            except Exception as e:
+                click.echo(e)
+                continue
+    return update_wrapper(new_func, f)
+
+
 class AliasedGroup(click.Group):
     """This subclass of a group supports looking up aliases in a config
     file and with a bit of magic.
@@ -127,50 +146,44 @@ class AliasedGroup(click.Group):
         ctx.fail('Too many matches: %s' % ', '.join(sorted(matches)))
 
 
-
-
-
 @click.command(cls=AliasedGroup)
 def cli():
-    """Application that help working in case jira+mercurial."""
+    """Application that help working in case multi repositories + Jira task tracker."""
 
 
 @cli.command()
 @click.option('-e', '--edit', is_flag=True, help='edit user config')
 @pass_config
 def config(cfg, edit):
-        with open(cfg.config_path, 'r+') as f:
-            text = f.read()
-            if not edit:
-                return click.echo_via_pager(text)
-            new_text = click.edit(text)
-            if new_text:
-                with open(cfg.config_path, 'w') as wf:
-                    wf.write(new_text)
+    """Show config file"""
+    with open(cfg.config_path, 'r+') as f:
+        text = f.read()
+        if not edit:
+            return click.echo_via_pager(text)
+        new_text = click.edit(text)
+        if new_text:
+            with open(cfg.config_path, 'w') as wf:
+                wf.write(new_text)
 
 
 @cli.command()
-@pass_config
-def status(cfg, **options):
+@pass_obj
+def status(ctx, cfg, repo, **options):
     """Shows the status."""
     # TODO options like --modified, --added, etc.
-    for repo in cfg.repositores:
-        try:
-            hg = hg_init(repo)
-            untracked = hg.status()
-            if untracked:
-                status_colorize(untracked)
-            else:
-                out('On branch {}'.format( d(hg.branch()) ))
-                out('nothing to commit, working tree clean')
-        except Exception as e:
-            clicl.echo(e)
-            continue
+    hg = hg_init(repo)
+    untracked = hg.status()
+    if untracked:
+        status_colorize(untracked)
+    else:
+        branch = d(hg.branch())
+        out('On branch {}'.format(branch))
+        out('nothing to commit, working tree clean')
 
 
 @cli.command()
-@pass_config
-def diff(cfg, **options):
+@pass_obj
+def diff(ctx, cfg, repo, **options):
     """diff repository (or selected files)"""
     colors = {
         '---': 'blue',
@@ -179,109 +192,125 @@ def diff(cfg, **options):
         '-': 'red',
         '+': 'green',
     }
-    for repo in cfg.repositores:
-        try:
-            hg = hg_init(repo)
-            branch = d(hg.branch())
-            lines = [click.style('\n======> {}({}) <======\n\n'.format( repo.name, branch ), fg='cyan')]
-            diff = d(hg.diff())
-            if diff:
-                for row in diff.split('\n'):
-                    fg = 'white'
-                    for key, color in colors.items():
-                        if row.startswith(key):
-                            fg = color
-                    lines.append(click.style(row, fg=fg))
-                click.echo_via_pager('\n'.join(lines))
-        except Exception as e:
-            clicl.echo(e)
-            continue
+    hg = hg_init(repo)
+    branch = d(hg.branch())
+    lines = [click.style('\n======> {}({}) <======\n\n'.format(repo.name, branch), fg='cyan')]
+    diff = d(hg.diff())
+    if diff:
+        for row in diff.split('\n'):
+            fg = 'white'
+            for key, color in colors.items():
+                if row.startswith(key):
+                    fg = color
+            lines.append(click.style(row, fg=fg))
+        click.echo_via_pager('\n'.join(lines))
 
 
 @cli.command()
-@click.argument('branch', required=False)
-@click.option('-C', '--clean', is_flag=True, help='discard uncommitted changes (no backup)')
-@pass_config
-def branch(cfg, branch, clean):
+@click.argument('branch_name', required=False)
+@click.option(
+    '-C',
+    '--clean',
+    is_flag=True,
+    help='discard uncommitted changes (no backup)'
+)
+@pass_obj
+def branch(ctx, cfg, repo, branch_name, clean):
     """set or show the current branch name"""
-    for repo in cfg.repositores:
+    hg = hg_init(repo, branch_name)
+    current_branch = d(hg.branch())
+    if branch_name:
         try:
-            hg = hg_init(repo)
-            jira = cfg.jira
-            current_branch = d(hg.branch())
-            default_branch = repo.get('default_branch', 'default')
-            if branch:
-                # jira working
-                issue = jira.issue(branch)
-                username = cfg.jira_cfg['username']
-                if jira.user(username) != issue.fields.assignee:
-                    jira.assign_issue(issue, username)
-                for status in jira.transitions(issue):
-                    if status['id'] == '4':
-                        jira.transition_issue(issue, transition='4')
-                        out(status['name'])
-
-                # hg working
-                if hg.incoming():
-                    prefix = d(hg.paths()[b'default'])
-                    out('comparing with {}'.format(prefix))
-                    hg.pull()
-                u, m, r, un = hg.update(default_branch, clean=clean)
-                try:
-                    hg.branch(name=branch.encode('ascii'))
-                except hglib.error.CommandError as e:
-                    hg.update(branch)
-                out('{} files updated, {} files merged, {} files removed, {} files unresolved'.format(u, m, r, un))
-                out('marked working directory as branch {}'.format(branch))
-            else:
-                out('BRANCH: {}'.format(current_branch))
-        except Exception as e:
-            click.echo(e)
-            continue
+            hg.branch(name=branch_name.encode('ascii'))
+            out('marked working directory as branch {}'.format(branch_name))
+        except hglib.error.CommandError as e:
+            err(e)
+    else:
+        out('BRANCH: {}'.format(current_branch))
 
 
 @cli.command()
-@click.argument('branch', required=False)
-@pass_config
-def push(cfg, branch):
+@click.argument('branch_name')
+@click.option(
+    '-C',
+    '--clean',
+    is_flag=True,
+    help='discard uncommitted changes (no backup)'
+)
+@pass_obj
+def update(ctx, cfg, repo, branch_name, clean, quiet=False):
+    """update working directory (or switch revisions)"""
+    hg = hg_init(repo, branch_name, quiet)
+    untracked = hg.status()
+    if untracked:
+        status_colorize(untracked)
+        if click.confirm('Do you want to commit and push all files?', abort=False):
+            message = click.prompt('Enter commit message')
+            ctx.invoke(commit, message=message)
+            ctx.invoke(push, branch_name=branch_name)
+            # cfg.hg.push(dest=cfg.repository['url'], branch=branch, newbranch=True)
+
+    u, m, r, un = hg.update(branch_name, clean=clean)
+    out('{} files updated, {} files merged, {} files removed, {} files unresolved'.format(u, m, r, un))
+    out('marked working directory as branch {}'.format(branch_name))
+
+
+@cli.command()
+@click.argument('branch_name')
+@pass_obj
+def start(ctx, cfg, repo, branch_name):
+    """start progress the ticket by branch name"""
+    # run update default
+    default_branch = repo.get('default_branch', 'default')
+    ctx.invoke(update, branch_name=default_branch, clean=True, quiet=True)
+
+    # # run jira
+    # jira = cfg.jira
+    # issue = jira.issue(branch)
+    # username = cfg.jira_cfg['username']
+    # if jira.user(username) != issue.fields.assignee:
+    #     jira.assign_issue(issue, username)
+    # for status in jira.transitions(issue):
+    #     if status['id'] in ['4', '951', '971']:
+    #         jira.transition_issue(issue, transition=status['id'])
+    #         out(status['name'])
+
+    # run branch
+    ctx.invoke(branch, branch_name=branch_name, clean=True)
+
+
+@cli.command()
+@click.argument('branch_name', required=False)
+@pass_obj
+def push(ctx, cfg, repo, branch_name):
     """push changes to the specified destination"""
-    for repo in cfg.repositores:
-        try:
-            hg = hg_init(repo)
-            untracked = hg.status()
-            if untracked:
-                status_colorize(untracked)
-                if click.confirm(
-                    'Do you want to added and commit untracked files?', default=True
-                ):
-                    message = click.prompt('Enter commit message')
-                    hg.commit(message=message, addremove=True)
-            try:
-                if branch:
-                    branch = branch.encode('ascii')
-                if hg.push(dest=repo['http_basic'].encode('ascii'), branch=branch, newbranch=True):
-                    out('push was successful')
-                else:
-                    out('nothing to push')
-            except hglib.error.CommandError as e:
-                click.echo(e)
-        except Exception as e:
-            click.echo(e)
-            continue
+    hg = hg_init(repo)
+    untracked = hg.status()
+    if untracked:
+        status_colorize(untracked)
+        if click.confirm(
+            'Do you want to added and commit untracked files?', default=True
+        ):
+            message = click.prompt('Enter commit message')
+            hg.commit(message=message, addremove=True)
+    try:
+        if branch_name:
+            branch_name = branch_name.encode('ascii')
+        if hg.push(dest=repo['http_basic'].encode('ascii'), branch=branch_name, newbranch=True):
+            out('push was successful')
+        else:
+            out('nothing to push')
+    except hglib.error.CommandError as e:
+        click.echo(e)
 
 
 @cli.command()
-@pass_config
-def clone(cfg):
+@pass_obj
+def clone(ctx, cfg, repo):
     """make a copy of an existing repository"""
-    for repo in cfg.repositores:
-        try:
-            hglib.clone(source=repo['http_basic'], dest=repo['path'])
-            hg = hg_init(repo)
-            out('clone was successful')
-        except Exception as e:
-            click.echo(e)
-            continue
+    hglib.clone(source=repo['http_basic'], dest=repo['path'])
+    hg_init(repo)
+    out('clone was successful')
 
 
 @cli.command()
@@ -291,104 +320,73 @@ def clone(cfg):
     prompt='Enter commit message',
     help='The commit message. If provided multiple times each argument gets converted into a new line.',
 )
-@pass_config
+@pass_obj
 @click.option('--close-branch', is_flag=True, help='mark a branch head as closed')
-def commit(cfg, message, close_branch):
+def commit(ctx, cfg, repo, message, close_branch):
     """commit the specified files or all outstanding changes"""
-    for repo in cfg.repositores:
-        try:
-            hg = hg_init(repo)
-            current_branch = d(hg.branch())
-            addremove = False
-            untracked = hg.status()
-            b_message = '{} {}'.format(current_branch, message)
-            if untracked:
-                status_colorize(untracked)
-                if click.confirm('Do you want to added untracked files?'):
-                    addremove = True
-            hg.commit(message=message, addremove=addremove, closebranch=close_branch)
-            out('commit was successful')
-        except Exception as e:
-            click.echo(e)
-            continue
+    hg = hg_init(repo)
+    current_branch = d(hg.branch())
+    # TODO not tracked
+    addremove = False
+    untracked = hg.status()
+    b_message = '{} {}'.format(current_branch, message)
+    if untracked:
+        status_colorize(untracked)
+        if click.confirm('Do you want to added untracked files?'):
+            addremove = True
+    hg.commit(message=b_message, addremove=addremove, closebranch=close_branch)
+    out('commit was successful')
 
 
 @cli.command()
 @click.argument('branch', required=False)
 @click.confirmation_option()
-@pass_config
-@click.pass_context
-def done(ctx, cfg, branch):
+@pass_obj
+def done(ctx, cfg, repo, branch):
     '''Checking fo uncommited code, then changing status in jira to "waiting for ci"'''
-    for repo in cfg.repositores:
-        try:
-            hg = hg_init(repo)
-            branch = branch.encode('ascii') if branch else hg.branch()
-            untracked = hg.status()
-            if untracked:
-                status_colorize(untracked)
-                if click.confirm('Do you want to commit and push all files?', abort=True):
-                    message = click.prompt('Enter commit message')
-                    ctx.invoke(commit, message=message)
-                    cfg.hg.push(dest=cfg.repository['url'], branch=branch, newbranch=True)
-            
-            #jira working
-            jira = cfg.jira
-            issue = jira.issue(branch)
-            if str(jira.user(cfg.jira_cfg['login'])) != str(issue.fields.assignee):
-                if click.confirm(
-                    'Issue is already assigned to another user. Do you want to continue?',
-                    abort=True,
-                ):
-                    pass
-            for status in jira.transitions(issue):
-                if status['id'] == '861':
-                    jira.transition_issue(issue, transition='861')
-                    out(status['name'])
+    hg = hg_init(repo)
+    branch = branch if branch else d(hg.branch())
+    untracked = hg.status()
+    if untracked:
+        status_colorize(untracked)
+        if click.confirm('Do you want to commit and push all files?', abort=True):
+            message = click.prompt('Enter commit message')
+            ctx.invoke(commit, ctx, cfg, repo, message=message)
+            ctx.invoke(push, ctx, cfg, repo, branch=branch)
 
-        except Exception as e:
-            click.echo(e)
-            continue
+    # jira working
+    jira = cfg.jira
+    issue = jira.issue(branch)
+    if str(jira.user(cfg.jira_cfg['username'])) != str(issue.fields.assignee):
+        if click.confirm(
+            'Issue is already assigned to another user. Do you want to continue?',
+            abort=True,
+        ):
+            pass
+    for status in jira.transitions(issue):
+        if status['id'] == '861':
+            jira.transition_issue(issue, transition='861')
+            out(status['name'])
 
 
 @cli.command()
 @click.argument('branch')
-@click.option('-C', '--clean', is_flag=True, help='discard uncommitted changes (no backup)')
 @pass_config
 @click.pass_context
-def update(ctx, cfg, branch, clean):
-    """update working directory (or switch revisions)"""
-    for repo in cfg.repositores:
-        try:
-            hg = hg_init(repo)
-            untracked = hg.status()
-            if untracked:
-                status_colorize(untracked)
-                if click.confirm('Do you want to commit and push all files?', abort=False):
-                    message = click.prompt('Enter commit message')
-                    ctx.invoke(commit, message=message)
-                    cfg.hg.push(dest=cfg.repository['url'], branch=branch, newbranch=True)
-
-            if hg.incoming():
-                prefix = d(hg.paths()[b'default'])
-                out('comparing with {}'.format(prefix))
-                hg.pull()
-            u, m, r, un = hg.update(branch, clean=clean)
-            out('{} files updated, {} files merged, {} files removed, {} files unresolved'.format(u, m, r, un))
-            out('marked working directory as branch {}'.format(branch))
-
-        except Exception as e:
-            click.echo(e)
-            continue
-
-
-@cli.command()
-@click.option('-c', '--closed', is_flag=True, help='show normal and closed branches')
-@pass_config
-def branches(cfg, closed):
-    """list repository named branches"""
-    # call('hg branches', shell=True)
+def merge(ctx, cfg, branch):
+    """(comming soon)merge another revision into working directory"""
     pass
 
 
-
+@cli.command()
+@click.option(
+    '-c',
+    '--closed',
+    is_flag=True,
+    help='show normal and closed branches'
+)
+@pass_config
+def branches(cfg, closed):
+    """(comming soon)list repository named branches"""
+    # call('hg branches', shell=True)
+    pass

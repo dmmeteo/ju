@@ -6,5 +6,5 @@ from ju.cli import pass_context
 @pass_context
 def cli(ctx):
     """Shows file changes in the current working directory."""
-    ctx.log('Changed files: none')
+    ctx.out('Changed files: none')
     ctx.vlog('bla bla bla, debug info')
