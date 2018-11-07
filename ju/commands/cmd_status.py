@@ -1,10 +1,11 @@
 import click
-from ju.cli import pass_context
+from ju.cli import pass_context, pass_obj
 
 
 @click.command('status', short_help='Shows file changes.')
-@pass_context
-def cli(ctx):
+@pass_obj
+def cli(ctx, *args, **kwargs):
     """Shows file changes in the current working directory."""
-    ctx.out('Changed files: none')
-    ctx.vlog('bla bla bla, debug info')
+    obj = ctx.obj
+    obj.out('Changed files: none')
+    obj.vlog('bla bla bla, debug info')
