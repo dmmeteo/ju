@@ -33,7 +33,7 @@ class Context(object):
     def log(self, msg, *args):
         """Logs a message to stderr."""
         if args:
-            msg %= args
+            msg %= args  # TODO something
         click.echo(msg, file=sys.stderr)
 
     def vlog(self, msg, *args):
