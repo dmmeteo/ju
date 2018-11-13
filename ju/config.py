@@ -69,6 +69,17 @@ class Config(object):
             out('\n======> {}({}) <======'.format(repo.name, branch), fg='green')
             return hg
 
+    def jira_change_status(self, ticket, *args):
+        jira = self.jira
+        issue = jira.issue(ticket)
+        username = self.jira_cfg['username']
+        if jira.user(username) != issue.fields.assignee:
+            jira.assign_issue(issue, username)
+        for status in jira.transitions(issue):
+            if status['id'] in ['4', '951', '971']:
+                jira.transition_issue(issue, transition=status['id'])
+                self.out(status['name'])
+
     def out(self, msg, **kwargs):
         """Out messages to stdout."""
         options = dict(bold=True, err=True)
