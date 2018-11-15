@@ -4,7 +4,6 @@ import sys
 import click
 import configparser
 import hglib
-from jira import JIRA, JIRAError
 
 
 class Config(object):
@@ -17,20 +16,6 @@ class Config(object):
         self.jira_cfg = {}
         self.repositores = []
         self.read_config(self.config_path)
-        self.jira_init()
-
-    def jira_init(self):
-        try:
-            self.jira = JIRA(
-                server=self.jira_cfg['server'],
-                basic_auth=(
-                    self.jira_cfg['username'],
-                    self.jira_cfg['password']
-                ),
-            )
-        except JIRAError as e:
-            print(e)
-            exit()
 
     def read_config(self, filename):
         if not os.path.isfile(filename):
@@ -69,17 +54,6 @@ class Config(object):
             out('\n======> {}({}) <======'.format(repo.name, branch), fg='green')
             return hg
 
-    def jira_change_status(self, ticket, *args):
-        jira = self.jira
-        issue = jira.issue(ticket)
-        username = self.jira_cfg['username']
-        if jira.user(username) != issue.fields.assignee:
-            jira.assign_issue(issue, username)
-        for status in jira.transitions(issue):
-            if status['id'] in ['4', '951', '971']:
-                jira.transition_issue(issue, transition=status['id'])
-                self.out(status['name'])
-
     def out(self, msg, **kwargs):
         """Out messages to stdout."""
         options = dict(bold=True, err=True)
@@ -93,8 +67,14 @@ class Config(object):
         click.secho(msg, **options)
 
     def dec(self, string):
-        """Decode bynari obj"""
+        """Converts a value into a valid string."""
         return click.utils.make_str(string)
+
+    def enc(self, string):
+        """Converts a value into a valid bytes."""
+        if isinstance(string, str):
+            return string.encode('utf-8', 'replace')
+        return string
 
     def status_colorize(self, lines_list):
         change_color = {

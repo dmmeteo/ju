@@ -264,16 +264,16 @@ def start(ctx, cfg, repo, branch_name):
     default_branch = repo.get('default_branch', 'default')
     ctx.invoke(update, branch_name=default_branch, clean=True, quiet=True)
 
-    # # run jira
-    # jira = cfg.jira
-    # issue = jira.issue(branch)
-    # username = cfg.jira_cfg['username']
-    # if jira.user(username) != issue.fields.assignee:
-    #     jira.assign_issue(issue, username)
-    # for status in jira.transitions(issue):
-    #     if status['id'] in ['4', '951', '971']:
-    #         jira.transition_issue(issue, transition=status['id'])
-    #         out(status['name'])
+    # run jira
+    jira = cfg.jira
+    issue = jira.issue(branch)
+    username = cfg.jira_cfg['username']
+    if jira.user(username) != issue.fields.assignee:
+        jira.assign_issue(issue, username)
+    for status in jira.transitions(issue):
+        if status['id'] in ['4', '951', '971']:
+            jira.transition_issue(issue, transition=status['id'])
+            out(status['name'])
 
     # run branch
     ctx.invoke(branch, branch_name=branch_name, clean=True)
